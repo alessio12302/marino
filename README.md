@@ -1,2 +1,200 @@
-# marino
-Apre lo spogliatoio a Marino
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Amadori - Cancello</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 20px;
+      background-color: #28a745;
+      font-family: Arial, sans-serif;
+      color: white;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      min-height: 100vh;
+    }
+
+    img {
+      max-width: 300px;
+      height: auto;
+      margin-top: 40px;
+    }
+
+    h2 {
+      margin: 20px 0 10px;
+      font-size: 22px;
+      font-weight: normal;
+    }
+
+    .section-title {
+      font-size: 24px;
+      font-weight: bold;
+      margin: 10px 0 30px;
+    }
+
+    button {
+      padding: 15px 30px;
+      font-size: 18px;
+      background-color: #ffffff;
+      color: #28a745;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: bold;
+      display: none;
+    }
+
+    button:hover {
+      background-color: #e6e6e6;
+    }
+
+    #status, #closed, #geoError {
+      font-size: 20px;
+      margin-top: 30px;
+      display: none;
+    }
+
+    .note {
+      margin-top: 40px;
+      font-size: 16px;
+      max-width: 90%;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Logo -->
+  <img src="IMG_0139.PNG" alt="Logo Amadori">
+
+  <h2>Allevamento di Morro D Oro</h2>
+  <div class="section-title">Ingresso Marino</div>
+
+  <button id="openGateBtn" onclick="apriPorta()">Apri Porta</button>
+
+  <div id="status">La porta si e aperta...</div>
+  <div id="closed">Accesso non disponibile, torna più tardi.</div>
+  <div id="geoError">Uhm, non sei davanti alla porta…</div>
+
+  <div class="note">
+    Ricorda di accettare/consentire la posizione attuale del tuo dispositivo per il corretto funzionamento.<br>
+    Non premere il pulsante se non sei presente davanti alla porta.<br>
+    Se non funziona, contattare il custode.
+  </div>
+
+  <script>
+    const button = document.getElementById("openGateBtn");
+    const statusMsg = document.getElementById("status");
+    const closedMsg = document.getElementById("closed");
+    const geoErrorMsg = document.getElementById("geoError");
+
+    const latConsentita = 42.67629;
+    const lonConsentita = 13.92347;
+    const raggioInMetri = 1000;
+
+    let geoWatcherId = null;
+
+    function distanza(lat1, lon1, lat2, lon2) {
+      const R = 6371e3;
+      const rad = Math.PI / 180;
+      const φ1 = lat1 * rad;
+      const φ2 = lat2 * rad;
+      const Δφ = (lat2 - lat1) * rad;
+      const Δλ = (lon2 - lon1) * rad;
+
+      const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+                Math.cos(φ1) * Math.cos(φ2) *
+                Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+      return R * c;
+    }
+
+    function isAccessAllowed() {
+      const now = new Date();
+      const day = now.getDay();
+      const hour = now.getHours();
+      return day >= 1 && day <= 5 && hour >= 7 && hour < 16;
+    }
+
+    function apriPorta() {
+      button.style.display = "none";
+      statusMsg.style.display = "block";
+      fetch("https://maker.ifttt.com/trigger/Porta_Aperta/json/with/key/gnYYkYK-CXpD4U-5ROjNSCKbsiN5HJ8k8dVPoQklN4U");
+      localStorage.setItem("gateClickTime", Date.now().toString());
+    }
+
+    function resetMessaggi() {
+      button.style.display = "none";
+      statusMsg.style.display = "none";
+      closedMsg.style.display = "none";
+      geoErrorMsg.style.display = "none";
+    }
+
+    function checkAccess(lat, lon) {
+      resetMessaggi();
+
+      const distanzaUtente = distanza(lat, lon, latConsentita, lonConsentita);
+      const lastClick = parseInt(localStorage.getItem("gateClickTime") || "0");
+      const now = Date.now();
+      const secondsPassed = (now - lastClick) / 1000;
+
+      if (distanzaUtente <= raggioInMetri) {
+        if (secondsPassed < 120) {
+          statusMsg.style.display = "block";
+        } else if (isAccessAllowed()) {
+          button.style.display = "inline-block";
+        } else {
+          closedMsg.style.display = "block";
+        }
+      } else {
+        geoErrorMsg.style.display = "block";
+        geoErrorMsg.textContent = "Uhm, non sei davanti alla porta…";
+      }
+    }
+
+    function startWatchingPosition() {
+      if (navigator.geolocation) {
+        geoWatcherId = navigator.geolocation.watchPosition(
+          (position) => {
+            const lat = position.coords.latitude;
+            const lon = position.coords.longitude;
+            checkAccess(lat, lon);
+          },
+          (error) => {
+            resetMessaggi();
+            geoErrorMsg.textContent = "Errore nella geolocalizzazione.";
+            geoErrorMsg.style.display = "block";
+          },
+          { enableHighAccuracy: true, maximumAge: 10000, timeout: 5000 }
+        );
+      } else {
+        geoErrorMsg.textContent = "Il tuo browser non supporta la geolocalizzazione.";
+        geoErrorMsg.style.display = "block";
+      }
+    }
+
+    function stopWatchingPosition() {
+      if (geoWatcherId !== null) {
+        navigator.geolocation.clearWatch(geoWatcherId);
+        geoWatcherId = null;
+      }
+    }
+
+    window.addEventListener("load", startWatchingPosition);
+
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") {
+        startWatchingPosition();
+      } else {
+        stopWatchingPosition();
+      }
+    });
+  </script>
+
+</body>
+</html>
